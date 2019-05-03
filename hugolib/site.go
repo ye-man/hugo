@@ -31,6 +31,7 @@ import (
 
 	"github.com/gohugoio/hugo/common/maps"
 
+	"github.com/gohugoio/hugo/hugofs"
 	"github.com/pkg/errors"
 
 	"github.com/gohugoio/hugo/common/text"
@@ -1330,9 +1331,9 @@ func (c *contentCaptureResultHandler) handleBundles(d *bundleDirs) {
 	}
 }
 
-func (c *contentCaptureResultHandler) handleCopyFile(f pathLangFile) {
-	proc := c.getContentProcessor(f.Lang())
-	proc.processAsset(f)
+func (c *contentCaptureResultHandler) handleCopyFile(m hugofs.FileMeta) {
+	proc := c.getContentProcessor(m.Lang())
+	proc.processAsset(m)
 }
 
 func (s *Site) readAndProcessContent(filenames ...string) error {
@@ -1366,6 +1367,7 @@ func (s *Site) readAndProcessContent(filenames ...string) error {
 
 	mainHandler := &contentCaptureResultHandler{contentProcessors: contentProcessors, defaultContentProcessor: defaultContentProcessor}
 
+	// TODO(bep) mod
 	sourceSpec := source.NewSourceSpec(s.PathSpec, s.BaseFs.Content.Fs)
 
 	if s.running() {

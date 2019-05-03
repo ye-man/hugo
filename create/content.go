@@ -50,7 +50,7 @@ func NewContent(
 
 	if isDir {
 
-		langFs := hugofs.NewLanguageFs(s.Language().Lang, sites.LanguageSet(), archetypeFs)
+		langFs := afero.NewMemMapFs() // TODO(bep) mod hugofs.NewLanguageFs(s.Language().Lang, sites.LanguageSet(), archetypeFs)
 
 		cm, err := mapArcheTypeDir(ps, langFs, archetypeFilename)
 		if err != nil {
@@ -111,7 +111,7 @@ func NewContent(
 	return nil
 }
 
-func targetSite(sites *hugolib.HugoSites, fi *hugofs.LanguageFileInfo) *hugolib.Site {
+func targetSite(sites *hugolib.HugoSites, fi hugofs.LangFilePather) *hugolib.Site {
 	for _, s := range sites.Sites {
 		if fi.Lang() == s.Language().Lang {
 			return s
@@ -177,9 +177,9 @@ func newContentFromDir(
 
 type archetypeMap struct {
 	// These needs to be parsed and executed as Go templates.
-	contentFiles []*hugofs.LanguageFileInfo
+	contentFiles []hugofs.LangFilePather
 	// These are just copied to destination.
-	otherFiles []*hugofs.LanguageFileInfo
+	otherFiles []hugofs.LangFilePather
 	// If the templates needs a fully built site. This can potentially be
 	// expensive, so only do when needed.
 	siteUsed bool
@@ -202,7 +202,7 @@ func mapArcheTypeDir(
 			return nil
 		}
 
-		fil := fi.(*hugofs.LanguageFileInfo)
+		fil := fi.(hugofs.LangFilePather)
 
 		if hugolib.IsContentFile(filename) {
 			m.contentFiles = append(m.contentFiles, fil)

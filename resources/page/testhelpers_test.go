@@ -16,7 +16,6 @@ package page
 import (
 	"fmt"
 	"html/template"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -189,7 +188,7 @@ func (p *testPage) File() source.File {
 	return p.file
 }
 
-func (p *testPage) FileInfo() os.FileInfo {
+func (p *testPage) FileInfo() hugofs.FileMetaInfo {
 	panic("not implemented")
 }
 

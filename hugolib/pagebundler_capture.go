@@ -14,11 +14,12 @@
 package hugolib
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+
+	"github.com/pkg/errors"
 
 	"github.com/gohugoio/hugo/config"
 
@@ -114,7 +115,7 @@ func newCapturer(
 // these channels.
 type captureResultHandler interface {
 	handleSingles(fis ...*fileInfo)
-	handleCopyFile(fi pathLangFile)
+	handleCopyFile(fi hugofs.FileMeta)
 	captureBundlesHandler
 }
 
@@ -139,7 +140,7 @@ func (c *captureResultHandlerChain) handleBundles(b *bundleDirs) {
 	}
 }
 
-func (c *captureResultHandlerChain) handleCopyFile(file pathLangFile) {
+func (c *captureResultHandlerChain) handleCopyFile(file hugofs.FileMeta) {
 	for _, h := range c.handlers {
 		if hh, ok := h.(captureResultHandler); ok {
 			hh.handleCopyFile(file)
@@ -147,59 +148,73 @@ func (c *captureResultHandlerChain) handleCopyFile(file pathLangFile) {
 	}
 }
 
+// TODO(bep) mod
 func (c *capturer) capturePartial(filenames ...string) error {
-	handled := make(map[string]bool)
 
-	for _, filename := range filenames {
-		dir, resolvedFilename, tp := c.contentChanges.resolveAndRemove(filename)
-		if handled[resolvedFilename] {
-			continue
-		}
+	/*
+		handled := make(map[string]bool)
 
-		handled[resolvedFilename] = true
-
-		switch tp {
-		case bundleLeaf:
-			if err := c.handleDir(resolvedFilename); err != nil {
-				// Directory may have been deleted.
-				if !os.IsNotExist(err) {
-					return err
-				}
-			}
-		case bundleBranch:
-			if err := c.handleBranchDir(resolvedFilename); err != nil {
-				// Directory may have been deleted.
-				if !os.IsNotExist(err) {
-					return err
-				}
-			}
-		default:
-			fi, err := c.resolveRealPath(resolvedFilename)
-			if os.IsNotExist(err) {
-				// File has been deleted.
+		for _, filename := range filenames {
+			dir, resolvedFilename, tp := c.contentChanges.resolveAndRemove(filename)
+			if handled[resolvedFilename] {
 				continue
 			}
 
-			// Just in case the owning dir is a new symlink -- this will
-			// create the proper mapping for it.
-			c.resolveRealPath(dir)
+			handled[resolvedFilename] = true
 
-			f, active := c.newFileInfo(fi, tp)
-			if active {
-				c.copyOrHandleSingle(f)
+			switch tp {
+			case bundleLeaf:
+				if err := c.handleDir(resolvedFilename); err != nil {
+					// Directory may have been deleted.
+					if !os.IsNotExist(err) {
+						return err
+					}
+				}
+			case bundleBranch:
+				if err := c.handleBranchDir(resolvedFilename); err != nil {
+					// Directory may have been deleted.
+					if !os.IsNotExist(err) {
+						return err
+					}
+				}
+			default:
+				fi, err := c.resolveRealPath(resolvedFilename)
+				if os.IsNotExist(err) {
+					// File has been deleted.
+					continue
+				}
+
+				// Just in case the owning dir is a new symlink -- this will
+				// create the proper mapping for it.
+				c.resolveRealPath(dir)
+
+				f, active := c.newFileInfo(fi, tp)
+				if active {
+					c.copyOrHandleSingle(f)
+				}
 			}
 		}
-	}
-
+	*/
 	return nil
 }
 
+// TODO(bep) mod game plan
+// Add FileInfo.Fs() afero.Fs
+// Use FileInfo in this package
+// Consider simplify the themeFs with a themeFs.Stat("content").Fs variant
+// Pick lang from FileInfo.Lang() or FileInfo.Fs().Lang?
+// Start everything from a dir FileInfo
 func (c *capturer) capture() error {
 	if len(c.filenames) > 0 {
 		return c.capturePartial(c.filenames...)
 	}
 
-	err := c.handleDir(helpers.FilePathSeparator)
+	fi, err := c.fs.Stat(helpers.FilePathSeparator)
+	if err != nil {
+		return err
+	}
+
+	err = c.handleDir(fi.(hugofs.FileMetaInfo))
 	if err != nil {
 		return err
 	}
@@ -207,7 +222,7 @@ func (c *capturer) capture() error {
 	return nil
 }
 
-func (c *capturer) handleNestedDir(dirname string) error {
+func (c *capturer) handleNestedDir(dir hugofs.FileMetaInfo) error {
 	select {
 	case c.sem <- true:
 		var g errgroup.Group
@@ -216,22 +231,23 @@ func (c *capturer) handleNestedDir(dirname string) error {
 			defer func() {
 				<-c.sem
 			}()
-			return c.handleDir(dirname)
+
+			return c.handleDir(dir)
 		})
 		return g.Wait()
 	default:
 		// For deeply nested file trees, waiting for a semaphore wil deadlock.
-		return c.handleDir(dirname)
+		return c.handleDir(dir)
 	}
 }
 
 // This handles a bundle branch and its resources only. This is used
 // in server mode on changes. If this dir does not (anymore) represent a bundle
 // branch, the handling is upgraded to the full handleDir method.
-func (c *capturer) handleBranchDir(dirname string) error {
+func (c *capturer) handleBranchDir(dirname hugofs.FileMetaInfo) error {
+
 	files, err := c.readDir(dirname)
 	if err != nil {
-
 		return err
 	}
 
@@ -241,7 +257,7 @@ func (c *capturer) handleBranchDir(dirname string) error {
 
 	for _, fi := range files {
 		if !fi.IsDir() {
-			tp, _ := classifyBundledFile(fi.RealName())
+			tp, _ := classifyBundledFile(fi.Name())
 			if dirType == bundleNot {
 				dirType = tp
 			}
@@ -266,8 +282,7 @@ func (c *capturer) handleBranchDir(dirname string) error {
 			continue
 		}
 
-		tp, isContent := classifyBundledFile(fi.RealName())
-
+		tp, isContent := classifyBundledFile(fi.Name())
 		f, active := c.newFileInfo(fi, tp)
 
 		if !active {
@@ -295,11 +310,11 @@ func (c *capturer) handleBranchDir(dirname string) error {
 
 }
 
-func (c *capturer) handleDir(dirname string) error {
-
+func (c *capturer) handleDir(dirname hugofs.FileMetaInfo) error {
 	files, err := c.readDir(dirname)
+
 	if err != nil {
-		return err
+		return errors.Wrap(err, "handleDir: readDir failed")
 	}
 
 	type dirState int
@@ -336,8 +351,10 @@ func (c *capturer) handleDir(dirname string) error {
 	var hasNonContent, isBranch bool
 
 	for i, fi := range files {
+
 		if !fi.IsDir() {
-			tp, isContent := classifyBundledFile(fi.RealName())
+			fip := fi.(hugofs.FileMetaInfo)
+			tp, isContent := classifyBundledFile(fip.Name())
 
 			fileBundleTypes[i] = tp
 			if !isBranch {
@@ -394,7 +411,9 @@ func (c *capturer) handleDir(dirname string) error {
 		for _, fi := range fileInfos {
 			if fi.FileInfo().IsDir() {
 				// Handle potential nested bundles.
-				if err := c.handleNestedDir(fi.Path()); err != nil {
+				// TODO(bep) mod check
+
+				if err := c.handleNestedDir(fi.FileInfo()); err != nil {
 					return err
 				}
 			} else if bundleType == bundleNot || (!fi.isOwner() && fi.isContentFile()) {
@@ -425,13 +444,15 @@ func (c *capturer) handleDir(dirname string) error {
 }
 
 func (c *capturer) handleNonBundle(
-	dirname string,
-	fileInfos pathLangFileFis,
+	dirname hugofs.FileMetaInfo,
+	fileInfos []os.FileInfo,
 	singlesOnly bool) error {
 
 	for _, fi := range fileInfos {
+		fim := fi.(hugofs.FileMetaInfo)
 		if fi.IsDir() {
-			if err := c.handleNestedDir(fi.Filename()); err != nil {
+			// TODO(bep) mod
+			if err := c.handleNestedDir(fim); err != nil {
 				return err
 			}
 		} else {
@@ -442,7 +463,7 @@ func (c *capturer) handleNonBundle(
 				}
 				c.handler.handleSingles(f)
 			} else {
-				c.handler.handleCopyFile(fi)
+				c.handler.handleCopyFile(fim.Meta())
 			}
 		}
 	}
@@ -455,11 +476,12 @@ func (c *capturer) copyOrHandleSingle(fi *fileInfo) {
 		c.handler.handleSingles(fi)
 	} else {
 		// These do not currently need any further processing.
-		c.handler.handleCopyFile(fi)
+		c.handler.handleCopyFile(fi.FileInfo().Meta())
 	}
 }
 
 func (c *capturer) createBundleDirs(fileInfos []*fileInfo, bundleType bundleDirType) (*bundleDirs, error) {
+
 	dirs := newBundleDirs(bundleType, c)
 
 	for _, fi := range fileInfos {
@@ -480,7 +502,7 @@ func (c *capturer) createBundleDirs(fileInfos []*fileInfo, bundleType bundleDirT
 					fileInfos = append(fileInfos, fis...)
 				}
 			}
-			err := c.collectFiles(fi.Path(), collector)
+			err := c.collectFiles(fi.FileInfo(), collector)
 			if err != nil {
 				return nil, err
 			}
@@ -511,21 +533,22 @@ func (c *capturer) createBundleDirs(fileInfos []*fileInfo, bundleType bundleDirT
 	return dirs, nil
 }
 
-func (c *capturer) collectFiles(dirname string, handleFiles func(fis ...*fileInfo)) error {
-
+func (c *capturer) collectFiles(dirname hugofs.FileMetaInfo, handleFiles func(fis ...*fileInfo)) error {
 	filesInDir, err := c.readDir(dirname)
 	if err != nil {
 		return err
 	}
 
 	for _, fi := range filesInDir {
+
 		if fi.IsDir() {
-			err := c.collectFiles(fi.Filename(), handleFiles)
+			err := c.collectFiles(fi.(hugofs.FileMetaInfo), handleFiles)
 			if err != nil {
 				return err
 			}
 		} else {
-			f, active := c.newFileInfo(fi, bundleNot)
+			fip := fi.(hugofs.FileMetaInfo)
+			f, active := c.newFileInfo(fip, bundleNot)
 			if active {
 				handleFiles(f)
 			}
@@ -535,29 +558,28 @@ func (c *capturer) collectFiles(dirname string, handleFiles func(fis ...*fileInf
 	return nil
 }
 
-func (c *capturer) readDir(dirname string) (pathLangFileFis, error) {
-	if c.sourceSpec.IgnoreFile(dirname) {
+func (c *capturer) readDir(dirname hugofs.FileMetaInfo) ([]os.FileInfo, error) {
+	if c.sourceSpec.IgnoreFile(dirname.Name()) {
 		return nil, nil
 	}
 
-	dir, err := c.fs.Open(dirname)
+	dir, err := dirname.Meta().Open()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to open dir %q", dirname.Name())
 	}
 	defer dir.Close()
 	fis, err := dir.Readdir(-1)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to read dir %q", dirname)
 	}
 
-	pfis := make(pathLangFileFis, 0, len(fis))
+	pfis := make([]os.FileInfo, 0, len(fis))
 
 	for _, fi := range fis {
-		fip := fi.(pathLangFileFi)
 
-		if !c.sourceSpec.IgnoreFile(fip.Filename()) {
+		if !c.sourceSpec.IgnoreFile(fi.Name()) { //fip.Filename()) { // TODO(bep) mod
 
-			err := c.resolveRealPathIn(fip)
+			// TODO(bep) mod err := c.resolveRealPathIn(fi)
 
 			if err != nil {
 				// It may have been deleted in the meantime.
@@ -567,29 +589,17 @@ func (c *capturer) readDir(dirname string) (pathLangFileFis, error) {
 				return nil, err
 			}
 
-			pfis = append(pfis, fip)
+			pfis = append(pfis, fi)
 		}
 	}
 
 	return pfis, nil
 }
 
-func (c *capturer) newFileInfo(fi pathLangFileFi, tp bundleDirType) (*fileInfo, bool) {
+func (c *capturer) newFileInfo(fi os.FileInfo, tp bundleDirType) (*fileInfo, bool) {
 	f := newFileInfo(c.sourceSpec, "", "", fi, tp)
 	return f, !f.disabled
 }
-
-type pathLangFile interface {
-	hugofs.LanguageAnnouncer
-	hugofs.FilePather
-}
-
-type pathLangFileFi interface {
-	os.FileInfo
-	pathLangFile
-}
-
-type pathLangFileFis []pathLangFileFi
 
 type bundleDirs struct {
 	tp bundleDirType
@@ -684,7 +694,7 @@ func (c *capturer) isSeen(dirname string) bool {
 	return false
 }
 
-func (c *capturer) resolveRealPath(path string) (pathLangFileFi, error) {
+func (c *capturer) resolveRealPath(path string) (hugofs.FileMetaInfo, error) {
 	fileInfo, err := c.lstatIfPossible(path)
 	if err != nil {
 		return nil, err
@@ -692,10 +702,10 @@ func (c *capturer) resolveRealPath(path string) (pathLangFileFi, error) {
 	return fileInfo, c.resolveRealPathIn(fileInfo)
 }
 
-func (c *capturer) resolveRealPathIn(fileInfo pathLangFileFi) error {
+func (c *capturer) resolveRealPathIn(fileInfo hugofs.FileMetaInfo) error {
 
-	basePath := fileInfo.BaseDir()
-	path := fileInfo.Filename()
+	basePath := "" // TODO(bep) mod fileInfo.BaseDir()
+	path := fileInfo.Meta().Filename()
 
 	realPath := path
 
@@ -712,9 +722,11 @@ func (c *capturer) resolveRealPathIn(fileInfo pathLangFileFi) error {
 		}
 
 		// TODO(bep) improve all of this.
-		if a, ok := fileInfo.(*hugofs.LanguageFileInfo); ok {
-			a.FileInfo = sfi
-		}
+		// TODO(bep) mod
+		/*
+			if a, ok := fileInfo.(*hugofs.LanguageFileInfo); ok {
+				a.FileInfo = sfi
+			}*/
 
 		realPath = link
 
@@ -764,10 +776,10 @@ func (c *capturer) resolveRealPathIn(fileInfo pathLangFileFi) error {
 	return nil
 }
 
-func (c *capturer) lstatIfPossible(path string) (pathLangFileFi, error) {
+func (c *capturer) lstatIfPossible(path string) (hugofs.FileMetaInfo, error) {
 	fi, err := helpers.LstatIfPossible(c.fs, path)
 	if err != nil {
 		return nil, err
 	}
-	return fi.(pathLangFileFi), nil
+	return fi.(hugofs.FileMetaInfo), nil
 }

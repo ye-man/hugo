@@ -18,6 +18,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gohugoio/hugo/htesting"
+
 	"github.com/spf13/viper"
 
 	"github.com/stretchr/testify/require"
@@ -33,7 +35,7 @@ func TestSCSSWithIncludePaths(t *testing.T) {
 		t.Skip("Skip SCSS")
 	}
 	assert := require.New(t)
-	workDir, clean, err := createTempDir("hugo-scss-include")
+	workDir, clean, err := htesting.CreateTempDir(hugofs.Os, "hugo-scss-include")
 	assert.NoError(err)
 	defer clean()
 
@@ -84,7 +86,7 @@ func TestSCSSWithThemeOverrides(t *testing.T) {
 		t.Skip("Skip SCSS")
 	}
 	assert := require.New(t)
-	workDir, clean, err := createTempDir("hugo-scss-include")
+	workDir, clean, err := htesting.CreateTempDir(hugofs.Os, "hugo-scss-include")
 	assert.NoError(err)
 	defer clean()
 

@@ -257,6 +257,8 @@ contentDir = "content_nn"
 
 	mm := afero.NewMemMapFs()
 
+	mm.MkdirAll(filepath.FromSlash("themes/mytheme"), 0777)
+
 	assert.NoError(afero.WriteFile(mm, filepath.Join("i18n", "en.toml"), []byte(`[hugo]
 other = "Hugo Rocks!"`), 0755))
 	assert.NoError(afero.WriteFile(mm, filepath.Join("i18n", "nn.toml"), []byte(`[hugo]

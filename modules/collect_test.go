@@ -1,4 +1,4 @@
-// Copyright 2018 The Hugo Authors. All rights reserved.
+// Copyright 2019 The Hugo Authors. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,29 +11,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package hugofs
+package modules
 
 import (
-	"os"
+	"testing"
 
-	"github.com/spf13/afero"
+	"github.com/stretchr/testify/require"
 )
 
-var (
-	_ afero.Fs = (*noLstatFs)(nil)
-)
+func TestPathKey(t *testing.T) {
+	assert := require.New(t)
 
-type noLstatFs struct {
-	afero.Fs
-}
+	for _, test := range []struct {
+		in     string
+		expect string
+	}{
+		{"github.com/foo", "github.com/foo"},
+		{"github.com/foo/v2", "github.com/foo"},
+		{"github.com/foo/v12", "github.com/foo"},
+		{"github.com/foo/v3d", "github.com/foo/v3d"},
+		{"MyTheme", "mytheme"},
+	} {
+		assert.Equal(test.expect, pathKey(test.in))
+	}
 
-// NewNoLstatFs creates a new filesystem with no Lstat support.
-func NewNoLstatFs(fs afero.Fs) afero.Fs {
-	return &noLstatFs{Fs: fs}
-}
-
-// LstatIfPossible always delegates to Stat.
-func (fs *noLstatFs) LstatIfPossible(name string) (os.FileInfo, bool, error) {
-	fi, err := fs.Stat(name)
-	return fi, false, err
 }

@@ -20,6 +20,8 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/gohugoio/hugo/hugofs"
+
 	"github.com/gohugoio/hugo/common/loggers"
 
 	"runtime"
@@ -64,7 +66,7 @@ func (s *storeFilenames) handleBundles(d *bundleDirs) {
 	s.dirKeys = append(s.dirKeys, keys...)
 }
 
-func (s *storeFilenames) handleCopyFile(file pathLangFile) {
+func (s *storeFilenames) handleCopyFile(file hugofs.FileMeta) {
 	s.Lock()
 	defer s.Unlock()
 	s.copyNames = append(s.copyNames, filepath.ToSlash(file.Filename()))
@@ -222,9 +224,9 @@ C:
 
 type noOpFileStore int
 
-func (noOpFileStore) handleSingles(fis ...*fileInfo)   {}
-func (noOpFileStore) handleBundles(b *bundleDirs)      {}
-func (noOpFileStore) handleCopyFile(file pathLangFile) {}
+func (noOpFileStore) handleSingles(fis ...*fileInfo)      {}
+func (noOpFileStore) handleBundles(b *bundleDirs)         {}
+func (noOpFileStore) handleCopyFile(file hugofs.FileMeta) {}
 
 func BenchmarkPageBundlerCapture(b *testing.B) {
 	capturers := make([]*capturer, b.N)

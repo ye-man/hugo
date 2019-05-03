@@ -20,8 +20,8 @@ import (
 	"github.com/gohugoio/hugo/tpl/tplimpl"
 
 	"github.com/gohugoio/hugo/common/loggers"
-	"github.com/gohugoio/hugo/htesting"
 	"github.com/gohugoio/hugo/langs"
+	"github.com/gohugoio/hugo/resources/page"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
 
@@ -199,7 +199,7 @@ func newDepsConfig(tp *TranslationProvider, cfg config.Provider, fs *hugofs.Fs) 
 	l.Set("i18nDir", "i18n")
 	return deps.DepsCfg{
 		Language:            l,
-		Site:                htesting.NewTestHugoSite(),
+		Site:                page.NewDummyHugoSite(cfg),
 		Cfg:                 cfg,
 		Fs:                  fs,
 		Logger:              logger,

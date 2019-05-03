@@ -18,7 +18,9 @@ require (
 	github.com/eknkc/amber v0.0.0-20171010120322-cdade1c07385
 	github.com/fortytw2/leaktest v1.3.0
 	github.com/fsnotify/fsnotify v1.4.7
+	github.com/go-errors/errors v1.0.1
 	github.com/gobwas/glob v0.2.3
+	github.com/gohugoio/testmodBuilder/mods v0.0.0-20190520184928-c56af20f2e95
 	github.com/google/go-cmp v0.3.0
 	github.com/gorilla/websocket v1.4.0
 	github.com/hashicorp/go-immutable-radix v1.0.0
@@ -41,6 +43,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.0-20180506121414-d4647c9c7a84
 	github.com/pelletier/go-toml v1.4.0 // indirect
 	github.com/pkg/errors v0.8.1
+	github.com/rogpeppe/go-internal v1.3.0
 	github.com/russross/blackfriday v1.5.2
 	github.com/sanity-io/litter v1.1.0
 	github.com/shurcooL/sanitized_anchor_name v1.0.0 // indirect

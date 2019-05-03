@@ -25,10 +25,10 @@ import (
 	"github.com/gohugoio/hugo/common/herrors"
 	"github.com/gohugoio/hugo/common/hugo"
 	"github.com/gohugoio/hugo/hugolib/paths"
+	"github.com/gohugoio/hugo/langs"
+	"github.com/gohugoio/hugo/modules"
 	"github.com/pkg/errors"
 	_errors "github.com/pkg/errors"
-
-	"github.com/gohugoio/hugo/langs"
 
 	"github.com/gohugoio/hugo/config"
 	"github.com/gohugoio/hugo/config/privacy"
@@ -145,6 +145,14 @@ func LoadConfig(d ConfigSourceDescriptor, doWithConfig ...func(cfg config.Provid
 		return v, configFiles, err
 	}
 
+	// We create languages based on the settings, so we need to make sure that
+	// all configuration is loaded/set before doing that.
+	for _, d := range doWithConfig {
+		if err := d(v); err != nil {
+			return v, configFiles, err
+		}
+	}
+
 	if cerr == nil {
 		themeConfigFiles, err := l.loadThemeConfig(v)
 		if err != nil {
@@ -153,14 +161,6 @@ func LoadConfig(d ConfigSourceDescriptor, doWithConfig ...func(cfg config.Provid
 
 		if len(themeConfigFiles) > 0 {
 			configFiles = append(configFiles, themeConfigFiles...)
-		}
-	}
-
-	// We create languages based on the settings, so we need to make sure that
-	// all configuration is loaded/set before doing that.
-	for _, d := range doWithConfig {
-		if err := d(v); err != nil {
-			return v, configFiles, err
 		}
 	}
 
@@ -445,34 +445,57 @@ func loadLanguageSettings(cfg config.Provider, oldLangs langs.Languages) error {
 
 func (l configLoader) loadThemeConfig(v1 *viper.Viper) ([]string, error) {
 	themesDir := paths.AbsPathify(l.WorkingDir, v1.GetString("themesDir"))
-	themes := config.GetStringSlicePreserveString(v1, "theme")
 
-	themeConfigs, err := paths.CollectThemes(l.Fs, themesDir, themes)
+	modConfig, err := modules.DecodeConfig(v1)
+	if err != nil {
+		return nil, err
+	}
+	ignoreVendor := v1.GetBool("ignoreVendor")
+	modProxy := v1.GetString("modProxy")
+
+	modulesClient := modules.NewClient(modules.ClientConfig{
+		Fs:           l.Fs,
+		WorkingDir:   l.WorkingDir,
+		ThemesDir:    themesDir,
+		ModuleConfig: modConfig,
+		IgnoreVendor: ignoreVendor,
+		ModProxy:     modProxy,
+	})
+
+	themeConfig, err := modulesClient.Collect()
 	if err != nil {
 		return nil, err
 	}
 
-	if len(themeConfigs) == 0 {
+	// Avoid recreating these later.
+	v1.Set("allModules", themeConfig.Modules)
+	v1.Set("modulesClient", modulesClient)
+
+	if len(themeConfig.Modules) == 0 {
 		return nil, nil
 	}
 
-	v1.Set("allThemes", themeConfigs)
-
 	var configFilenames []string
-	for _, tc := range themeConfigs {
-		if tc.ConfigFilename != "" {
-			configFilenames = append(configFilenames, tc.ConfigFilename)
+	for _, tc := range themeConfig.Modules {
+		if tc.ConfigFilename() != "" {
+			configFilenames = append(configFilenames, tc.ConfigFilename())
 			if err := l.applyThemeConfig(v1, tc); err != nil {
 				return nil, err
 			}
 		}
 	}
 
+	if themeConfig.GoModulesFilename != "" {
+		// We want to watch this for changes and trigger rebuild on version
+		// changes etc.
+		configFilenames = append(configFilenames, themeConfig.GoModulesFilename)
+	}
+
 	return configFilenames, nil
 
 }
 
-func (l configLoader) applyThemeConfig(v1 *viper.Viper, theme paths.ThemeConfig) error {
+func (l configLoader) applyThemeConfig(v1 *viper.Viper, theme modules.Module) error {
 
 	const (
 		paramsKey    = "params"
@@ -480,13 +503,13 @@ func (l configLoader) applyThemeConfig(v1 *viper.Viper, theme paths.ThemeConfig)
 		menuKey      = "menus"
 	)
 
-	v2 := theme.Cfg
+	v2 := theme.Cfg()
 
 	for _, key := range []string{paramsKey, "outputformats", "mediatypes"} {
 		l.mergeStringMapKeepLeft("", key, v1, v2)
 	}
 
-	themeLower := strings.ToLower(theme.Name)
+	themeLower := strings.ToLower(theme.Path())
 	themeParamsNamespace := paramsKey + "." + themeLower
 
 	// Set namespaced params
@@ -635,5 +658,8 @@ func loadDefaultSettingsFor(v *viper.Viper) error {
 	v.SetDefault("disableFastRender", false)
 	v.SetDefault("timeout", 10000) // 10 seconds
 	v.SetDefault("enableInlineShortcodes", false)
+
+	// Translates to GOPROXY when doing "go get" etc.
+	v.SetDefault("modProxy", "direct")
 	return nil
 }

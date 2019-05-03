@@ -29,8 +29,6 @@ import (
 
 	"github.com/gohugoio/hugo/common/hugo"
 
-	"github.com/gohugoio/hugo/hugofs"
-
 	"github.com/spf13/afero"
 
 	"github.com/jdkato/prose/transform"
@@ -460,16 +458,7 @@ func PrintFs(fs afero.Fs, path string, w io.Writer) {
 		return
 	}
 	afero.Walk(fs, path, func(path string, info os.FileInfo, err error) error {
-		if info != nil && !info.IsDir() {
-			s := path
-			if lang, ok := info.(hugofs.LanguageAnnouncer); ok {
-				s = s + "\tLANG: " + lang.Lang()
-			}
-			if fp, ok := info.(hugofs.FilePather); ok {
-				s = s + "\tRF: " + fp.Filename() + "\tBP: " + fp.BaseDir()
-			}
-			fmt.Fprintln(w, "    ", s)
-		}
+		fmt.Fprintf(w, "    %q\n", path)
 		return nil
 	})
 }

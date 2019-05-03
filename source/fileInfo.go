@@ -14,6 +14,7 @@
 package source
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,10 +91,11 @@ type FileWithoutOverlap interface {
 	// Hugo content files being one of them, considered to be unique.
 	UniqueID() string
 
-	FileInfo() os.FileInfo
+	FileInfo() hugofs.FileMetaInfo
 }
 
 // A ReadableFile is a File that is readable.
+// TODO(bep) mod get rid of this
 type ReadableFile interface {
 	File
 	Open() (hugio.ReadSeekCloser, error)
@@ -107,7 +109,7 @@ type FileInfo struct {
 
 	sp *SourceSpec
 
-	fi os.FileInfo
+	fi hugofs.FileMetaInfo
 
 	// Derived from filename
 	ext  string // Extension without any "."
@@ -179,7 +181,7 @@ func (fi *FileInfo) UniqueID() string {
 }
 
 // FileInfo returns a file's underlying os.FileInfo.
-func (fi *FileInfo) FileInfo() os.FileInfo { return fi.fi }
+func (fi *FileInfo) FileInfo() hugofs.FileMetaInfo { return fi.fi }
 
 func (fi *FileInfo) String() string { return fi.BaseFileName() }
 
@@ -226,20 +228,21 @@ func NewTestFile(filename string) *FileInfo {
 }
 
 // NewFileInfo returns a new FileInfo structure.
-func (sp *SourceSpec) NewFileInfo(baseDir, filename string, isLeafBundle bool, fi os.FileInfo) *FileInfo {
+func (sp *SourceSpec) NewFileInfo(baseDir, filename string, isLeafBundle bool, osFi os.FileInfo) *FileInfo {
 
 	var lang, translationBaseName, relPath string
 
-	if fp, ok := fi.(hugofs.FilePather); ok {
-		filename = fp.Filename()
-		baseDir = fp.BaseDir()
-		relPath = fp.Path()
-	}
+	fi := osFi.(hugofs.FileMetaInfo)
 
-	if fl, ok := fi.(hugofs.LanguageAnnouncer); ok {
-		lang = fl.Lang()
-		translationBaseName = fl.TranslationBaseName()
-	}
+	m := fi.Meta()
+
+	fmt.Println(">>>", filename, "vs", m.Filename(), ":::", m, "path:", m.Path())
+
+	filename = m.Filename()
+	// TODO(bep) mod baseDir = fm.BaseDir()
+	relPath = m.Path()
+	lang = m.Lang()
+	translationBaseName = m.GetString("translationBaseName")
 
 	dir, name := filepath.Split(filename)
 	if !strings.HasSuffix(dir, helpers.FilePathSeparator) {
@@ -277,10 +280,10 @@ func (sp *SourceSpec) NewFileInfo(baseDir, filename string, isLeafBundle bool, f
 		lang:                lang,
 		ext:                 ext,
 		dir:                 dir,
-		relDir:              relDir,
-		relPath:             relPath,
+		relDir:              relDir,  // Dir()
+		relPath:             relPath, // Path()
 		name:                name,
-		baseName:            baseName,
+		baseName:            baseName, // BaseFileName()
 		translationBaseName: translationBaseName,
 		isLeafBundle:        isLeafBundle,
 	}

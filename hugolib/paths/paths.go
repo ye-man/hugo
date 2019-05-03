@@ -20,6 +20,7 @@ import (
 
 	"github.com/gohugoio/hugo/config"
 	"github.com/gohugoio/hugo/langs"
+	"github.com/gohugoio/hugo/modules"
 	"github.com/pkg/errors"
 
 	"github.com/gohugoio/hugo/hugofs"
@@ -74,8 +75,8 @@ type Paths struct {
 	DefaultContentLanguage         string
 	multilingual                   bool
 
-	themes    []string
-	AllThemes []ThemeConfig
+	AllModules    modules.Modules
+	ModulesClient *modules.Client
 }
 
 func New(fs *hugofs.Fs, cfg config.Provider) (*Paths, error) {
@@ -163,8 +164,6 @@ func New(fs *hugofs.Fs, cfg config.Provider) (*Paths, error) {
 		AbsResourcesDir: absResourcesDir,
 		AbsPublishDir:   absPublishDir,
 
-		themes: config.GetStringSlicePreserveString(cfg, "theme"),
-
 		multilingual:                   cfg.GetBool("multilingual"),
 		defaultContentLanguageInSubdir: cfg.GetBool("defaultContentLanguageInSubdir"),
 		DefaultContentLanguage:         defaultContentLanguage,
@@ -176,13 +175,36 @@ func New(fs *hugofs.Fs, cfg config.Provider) (*Paths, error) {
 		PaginatePath: cfg.GetString("paginatePath"),
 	}
 
-	if !cfg.IsSet("theme") && cfg.IsSet("allThemes") {
-		p.AllThemes = cfg.Get("allThemes").([]ThemeConfig)
+	// TODO(bep) improve.
+	if cfg.IsSet("allModules") {
+		p.AllModules = cfg.Get("allModules").(modules.Modules)
 	} else {
-		p.AllThemes, err = collectThemeNames(p)
+		modConfig, err := modules.DecodeConfig(cfg)
 		if err != nil {
 			return nil, err
 		}
+
+		themesDir := p.AbsPathify(p.ThemesDir)
+
+		modulesClient := modules.NewClient(modules.ClientConfig{
+			Fs:           p.Fs.Source,
+			WorkingDir:   p.WorkingDir,
+			ThemesDir:    themesDir,
+			ModuleConfig: modConfig,
+			IgnoreVendor: cfg.GetBool("ignoreVendor"),
+			ModProxy:     cfg.GetString("modProxy"),
+		})
+
+		themeConfig, err := modulesClient.Collect()
+		if err != nil {
+			return nil, err
+		}
+		p.ModulesClient = modulesClient
+		p.AllModules = themeConfig.Modules
+	}
+
+	if cfg.IsSet("modulesClient") {
+		p.ModulesClient = cfg.Get("modulesClient").(*modules.Client)
 	}
 
 	// TODO(bep) remove this, eventually
@@ -208,12 +230,9 @@ func (p *Paths) Lang() string {
 }
 
 // ThemeSet checks whether a theme is in use or not.
+// TODO(bep) mod remove this
 func (p *Paths) ThemeSet() bool {
-	return len(p.themes) > 0
-}
-
-func (p *Paths) Themes() []string {
-	return p.themes
+	return len(p.AllModules) > 0
 }
 
 func (p *Paths) GetTargetLanguageBasePath() string {

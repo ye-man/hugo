@@ -818,23 +818,19 @@ func (h *HugoSites) handleDataFile(r source.ReadableFile) error {
 
 	f, err := r.Open()
 	if err != nil {
-		return errors.Wrapf(err, "Failed to open data file %q:", r.LogicalName())
+		return errors.Wrapf(err, "data: failed to open %q:", r.LogicalName())
 	}
 	defer f.Close()
 
 	// Crawl in data tree to insert data
 	current = h.data
 	keyParts := strings.Split(r.Dir(), helpers.FilePathSeparator)
-	// The first path element is the virtual folder (typically theme name), which is
-	// not part of the key.
-	if len(keyParts) > 1 {
-		for _, key := range keyParts[1:] {
-			if key != "" {
-				if _, ok := current[key]; !ok {
-					current[key] = make(map[string]interface{})
-				}
-				current = current[key].(map[string]interface{})
+	for _, key := range keyParts {
+		if key != "" {
+			if _, ok := current[key]; !ok {
+				current[key] = make(map[string]interface{})
 			}
+			current = current[key].(map[string]interface{})
 		}
 	}
 
@@ -848,15 +844,10 @@ func (h *HugoSites) handleDataFile(r source.ReadableFile) error {
 	}
 
 	// filepath.Walk walks the files in lexical order, '/' comes before '.'
-	// this warning could happen if
-	// 1. A theme uses the same key; the main data folder wins
-	// 2. A sub folder uses the same key: the sub folder wins
 	higherPrecedentData := current[r.BaseFileName()]
 
 	switch data.(type) {
 	case nil:
-		// hear the crickets?
-
 	case map[string]interface{}:
 
 		switch higherPrecedentData.(type) {
@@ -868,7 +859,11 @@ func (h *HugoSites) handleDataFile(r source.ReadableFile) error {
 			higherPrecedentMap := higherPrecedentData.(map[string]interface{})
 			for key, value := range data.(map[string]interface{}) {
 				if _, exists := higherPrecedentMap[key]; exists {
-					h.Log.WARN.Printf("Data for key '%s' in path '%s' is overridden by higher precedence data already in the data tree", key, r.Path())
+					// this warning could happen if
+					// 1. A theme uses the same key; the main data folder wins
+					// 2. A sub folder uses the same key: the sub folder wins
+					// TODO(bep) figure out a way to detect 2) above and make that a WARN
+					h.Log.INFO.Printf("Data for key '%s' in path '%s' is overridden by higher precedence data already in the data tree", key, r.Path())
 				} else {
 					higherPrecedentMap[key] = value
 				}

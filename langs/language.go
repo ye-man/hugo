@@ -132,6 +132,15 @@ func (l *Language) Params() map[string]interface{} {
 	return l.params
 }
 
+func (l Languages) AsSet() map[string]bool {
+	m := make(map[string]bool)
+	for _, lang := range l {
+		m[lang.Lang] = true
+	}
+
+	return m
+}
+
 // IsMultihost returns whether there are more than one language and at least one of
 // the languages has baseURL specificed on the language level.
 func (l Languages) IsMultihost() bool {

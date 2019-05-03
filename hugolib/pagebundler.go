@@ -19,6 +19,8 @@ import (
 	"math"
 	"path/filepath"
 
+	"github.com/gohugoio/hugo/hugofs"
+
 	"github.com/gohugoio/hugo/config"
 
 	_errors "github.com/pkg/errors"
@@ -40,7 +42,7 @@ type siteContentProcessor struct {
 	fileSinglesChan chan *fileInfo
 
 	// These assets should be just copied to destination.
-	fileAssetsChan chan pathLangFile
+	fileAssetsChan chan hugofs.FileMeta
 
 	numWorkers int
 
@@ -66,7 +68,7 @@ func (s *siteContentProcessor) processSingle(fi *fileInfo) {
 	}
 }
 
-func (s *siteContentProcessor) processAsset(asset pathLangFile) {
+func (s *siteContentProcessor) processAsset(asset hugofs.FileMeta) {
 	select {
 	case s.fileAssetsChan <- asset:
 	case <-s.ctx.Done():
@@ -85,7 +87,7 @@ func newSiteContentProcessor(ctx context.Context, partialBuild bool, s *Site) *s
 		handleContent:   newHandlerChain(s),
 		fileBundlesChan: make(chan *bundleDir, numWorkers),
 		fileSinglesChan: make(chan *fileInfo, numWorkers),
-		fileAssetsChan:  make(chan pathLangFile, numWorkers),
+		fileAssetsChan:  make(chan hugofs.FileMeta, numWorkers),
 		numWorkers:      numWorkers,
 		pagesChan:       make(chan *pageState, numWorkers),
 	}
@@ -145,9 +147,9 @@ func (s *siteContentProcessor) process(ctx context.Context) error {
 					if !ok {
 						return nil
 					}
-					f, err := s.site.BaseFs.Content.Fs.Open(file.Filename())
+					f, err := file.Open()
 					if err != nil {
-						return _errors.Wrap(err, "failed to open assets file")
+						return _errors.Wrap(err, "content assets: failed to open file")
 					}
 					filename := filepath.Join(s.site.GetTargetLanguageBasePath(), file.Path())
 					err = s.site.publish(&s.site.PathSpec.ProcessingStats.Files, filename, f)

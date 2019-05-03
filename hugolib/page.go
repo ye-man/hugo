@@ -843,6 +843,8 @@ func (ps pageStatePages) findPagePosByFilnamePrefix(prefix string) int {
 
 func (s *Site) sectionsFromFile(fi source.File) []string {
 	dirname := fi.Dir()
+
+	// TODO(bep) mod
 	dirname = strings.Trim(dirname, helpers.FilePathSeparator)
 	if dirname == "" {
 		return nil

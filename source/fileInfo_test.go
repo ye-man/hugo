@@ -69,7 +69,8 @@ func TestFileInfoLanguage(t *testing.T) {
 	}
 
 	m := afero.NewMemMapFs()
-	lfs := hugofs.NewLanguageFs("sv", langs, m)
+	lfs, err := hugofs.NewLanguageFs(langs, hugofs.NewLangFsProvider("sv", m))
+	assert.NoError(err)
 	v := newTestConfig()
 
 	fs := hugofs.NewFrom(m, v)

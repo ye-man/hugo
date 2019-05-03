@@ -14,9 +14,10 @@
 package hugolib
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
+
+	"github.com/pkg/errors"
 
 	"github.com/gohugoio/hugo/common/hugio"
 
@@ -192,7 +193,7 @@ func (c *contentHandlers) parsePage(h contentHandler) contentHandler {
 		content := func() (hugio.ReadSeekCloser, error) {
 			f, err := fi.Open()
 			if err != nil {
-				return nil, fmt.Errorf("failed to open content file %q: %s", fi.Filename(), err)
+				return nil, errors.Wrapf(err, "content: failed to open file %q", fi.Filename())
 			}
 			return f, nil
 		}

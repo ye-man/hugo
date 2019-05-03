@@ -41,6 +41,7 @@ func TestNewBaseFs(t *testing.T) {
 	workingDir := filepath.FromSlash("/my/work")
 	v.Set("workingDir", workingDir)
 	v.Set("themesDir", "themes")
+	v.Set("defaultContentLanguage", "en")
 	v.Set("theme", themes[:1])
 
 	// Write some data to the themes
@@ -232,7 +233,7 @@ func TestRealDirs(t *testing.T) {
 	checkFileCount(bfs.Resources.Fs, "", assert, 3)
 
 	assert.NotNil(bfs.themeFs)
-	fi, b, err := bfs.themeFs.(afero.Lstater).LstatIfPossible(filepath.Join("resources", "t1.txt"))
+	fi, b, err := bfs.themeFs.overlay.(afero.Lstater).LstatIfPossible(filepath.Join("resources", "t1.txt"))
 	assert.NoError(err)
 	assert.False(b)
 	assert.Equal("t1.txt", fi.Name())
@@ -312,9 +313,9 @@ func TestStaticFsMultiHost(t *testing.T) {
 }
 
 func checkFileCount(fs afero.Fs, dirname string, assert *require.Assertions, expected int) {
-	count, _, err := countFileaAndGetDirs(fs, dirname)
-	assert.NoError(err)
-	assert.Equal(expected, count)
+	count, fnames, err := countFileaAndGetFilenames(fs, dirname)
+	assert.NoError(err, fnames)
+	assert.Equal(expected, count, fnames)
 }
 
 func checkFileContent(fs afero.Fs, filename string, assert *require.Assertions, expected ...string) {
@@ -329,27 +330,29 @@ func checkFileContent(fs afero.Fs, filename string, assert *require.Assertions, 
 	}
 }
 
-func countFileaAndGetDirs(fs afero.Fs, dirname string) (int, []string, error) {
+func countFileaAndGetFilenames(fs afero.Fs, dirname string) (int, []string, error) {
 	if fs == nil {
 		return 0, nil, errors.New("no fs")
 	}
 
 	counter := 0
-	var dirs []string
+	var filenames []string
 
 	afero.Walk(fs, dirname, func(path string, info os.FileInfo, err error) error {
 		if info != nil {
 			if !info.IsDir() {
 				counter++
-			} else if info.Name() != "." {
-				dirs = append(dirs, filepath.Join(path, info.Name()))
+			}
+
+			if info.Name() != "." {
+				filenames = append(filenames, filepath.Join(path, info.Name()))
 			}
 		}
 
 		return nil
 	})
 
-	return counter, dirs, nil
+	return counter, filenames, nil
 }
 
 func setConfigAndWriteSomeFilesTo(fs afero.Fs, v *viper.Viper, key, val string, num int) {

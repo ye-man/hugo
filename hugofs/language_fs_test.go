@@ -14,87 +14,122 @@
 package hugofs
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 
+	"github.com/gohugoio/hugo/langs"
+	"github.com/spf13/viper"
+
 	"github.com/spf13/afero"
+
 	"github.com/stretchr/testify/require"
 )
 
-func TestLanguagFs(t *testing.T) {
-	languages := map[string]bool{
-		"sv": true,
-	}
-	base := filepath.FromSlash("/my/base")
+// TODO(bep) mod
+// tc-lib-color/class-Com.Tecnick.Color.Css and class-Com.Tecnick.Color.sv.Css
+func TestLanguageFs(t *testing.T) {
 	assert := require.New(t)
-	m := afero.NewMemMapFs()
-	bfs := afero.NewBasePathFs(m, base)
-	lfs := NewLanguageFs("sv", languages, bfs)
-	assert.NotNil(lfs)
-	assert.Equal("sv", lfs.Lang())
-	err := afero.WriteFile(lfs, filepath.FromSlash("sect/page.md"), []byte("abc"), 0777)
+	v := viper.New()
+	v.Set("contentDir", "content")
+
+	langSet := langs.Languages{
+		langs.NewLanguage("en", v),
+		langs.NewLanguage("sv", v),
+	}.AsSet()
+
+	enFs := langFs{lang: "en", fs: afero.NewMemMapFs()}
+	svFs := langFs{lang: "sv", fs: afero.NewMemMapFs()}
+
+	for _, fs := range []langFs{enFs, svFs} {
+		assert.NoError(afero.WriteFile(fs.Fs(), filepath.FromSlash("blog/a.txt"), []byte("abc"), 0777))
+
+		for _, fs2 := range []langFs{enFs, svFs} {
+			lingoName := fmt.Sprintf("lingo.%s.txt", fs2.lang)
+			assert.NoError(afero.WriteFile(fs.Fs(), filepath.FromSlash("blog/"+lingoName), []byte(lingoName), 0777))
+		}
+
+	}
+
+	lfs, err := NewLanguageFs(langSet, enFs, svFs)
 	assert.NoError(err)
-	fi, err := lfs.Stat(filepath.FromSlash("sect/page.md"))
+
+	blog, err := lfs.Open("blog")
 	assert.NoError(err)
-	assert.Equal("__hugofs_sv_page.md", fi.Name())
 
-	languager, ok := fi.(LanguageAnnouncer)
-	assert.True(ok)
+	names, err := blog.Readdirnames(-1)
+	assert.NoError(err)
+	assert.Equal(4, len(names), names)
+	assert.Equal([]string{"a.txt", "lingo.en.txt", "a.txt", "lingo.sv.txt"}, names)
 
-	assert.Equal("sv", languager.Lang())
+	fis, err := blog.Readdir(-1)
+	assert.NoError(err)
+	assert.Equal(4, len(fis))
 
-	lfi, ok := fi.(*LanguageFileInfo)
-	assert.True(ok)
-	assert.Equal(filepath.FromSlash("/my/base/sect/page.md"), lfi.Filename())
-	assert.Equal(filepath.FromSlash("sect/page.md"), lfi.Path())
-	assert.Equal("page.sv.md", lfi.virtualName)
-	assert.Equal("__hugofs_sv_page.md", lfi.Name())
-	assert.Equal("page.md", lfi.RealName())
-	assert.Equal(filepath.FromSlash("/my/base"), lfi.BaseDir())
-	assert.Equal("sv", lfi.Lang())
-	assert.Equal("page", lfi.TranslationBaseName())
+	enFim := fis[0].(FileMetaInfo).Meta()
+	svFim := fis[2].(FileMetaInfo).Meta()
+
+	assert.Equal("en", enFim.Lang())
+	assert.Equal("sv", svFim.Lang())
+
 }
 
-// Issue 4559
-func TestFilenamesHandling(t *testing.T) {
-	languages := map[string]bool{
-		"sv": true,
-	}
-	base := filepath.FromSlash("/my/base")
+/*
+
+theme/a/mysvblogcontent => /blog [sv]
+theme/b/myenblogcontent=> /blog [en]
+
+*/
+
+func TestLanguageRootMapping(t *testing.T) {
 	assert := require.New(t)
-	m := afero.NewMemMapFs()
-	bfs := afero.NewBasePathFs(m, base)
-	lfs := NewLanguageFs("sv", languages, bfs)
-	assert.NotNil(lfs)
-	assert.Equal("sv", lfs.Lang())
+	v := viper.New()
+	v.Set("contentDir", "content")
 
-	for _, test := range []struct {
-		filename string
-		check    func(fi *LanguageFileInfo)
-	}{
-		{"tc-lib-color/class-Com.Tecnick.Color.Css", func(fi *LanguageFileInfo) {
-			assert.Equal("class-Com.Tecnick.Color", fi.TranslationBaseName())
-			assert.Equal(filepath.FromSlash("/my/base"), fi.BaseDir())
-			assert.Equal(filepath.FromSlash("tc-lib-color/class-Com.Tecnick.Color.Css"), fi.Path())
-			assert.Equal("class-Com.Tecnick.Color.Css", fi.RealName())
-			assert.Equal(filepath.FromSlash("/my/base/tc-lib-color/class-Com.Tecnick.Color.Css"), fi.Filename())
-		}},
-		{"tc-lib-color/class-Com.Tecnick.Color.sv.Css", func(fi *LanguageFileInfo) {
-			assert.Equal("class-Com.Tecnick.Color", fi.TranslationBaseName())
-			assert.Equal("class-Com.Tecnick.Color.sv.Css", fi.RealName())
-			assert.Equal(filepath.FromSlash("/my/base/tc-lib-color/class-Com.Tecnick.Color.sv.Css"), fi.Filename())
-		}},
-	} {
-		err := afero.WriteFile(lfs, filepath.FromSlash(test.filename), []byte("abc"), 0777)
-		assert.NoError(err)
-		fi, err := lfs.Stat(filepath.FromSlash(test.filename))
-		assert.NoError(err)
+	/*langSet := langs.Languages{
+		langs.NewLanguage("en", v),
+		langs.NewLanguage("sv", v),
+	}.AsSet()*/
 
-		lfi, ok := fi.(*LanguageFileInfo)
-		assert.True(ok)
-		assert.Equal("sv", lfi.Lang())
-		test.check(lfi)
+	fs := afero.NewMemMapFs()
 
+	testfile := "test.txt"
+
+	assert.NoError(afero.WriteFile(fs, filepath.Join("themes/a/mysvblogcontent", testfile), []byte("some sv blog content"), 0755))
+	assert.NoError(afero.WriteFile(fs, filepath.Join("themes/a/myenblogcontent", testfile), []byte("some en blog content in a"), 0755))
+
+	assert.NoError(afero.WriteFile(fs, filepath.Join("themes/a/mysvdocs", testfile), []byte("some sv docs content"), 0755))
+
+	assert.NoError(afero.WriteFile(fs, filepath.Join("themes/b/myenblogcontent", testfile), []byte("some en content"), 0755))
+
+	bfs := NewBasePathRealFilenameFs(afero.NewBasePathFs(fs, "themes").(*afero.BasePathFs))
+
+	rfs, err := NewRootMappingFs(bfs,
+		RootMapping{
+			From: "blog",
+			To:   "a/mysvblogcontent",
+			Lang: "sv",
+		},
+		RootMapping{
+			From: "blog",
+			To:   "a/myenblogcontent",
+			Lang: "en",
+		},
+		RootMapping{
+			From: "docs",
+			To:   "a/mysvdocs",
+			Lang: "sv",
+		},
+	)
+
+	assert.NoError(err)
+
+	dirs, err := rfs.Dirs("blog")
+	assert.NoError(err)
+	assert.Equal(2, len(dirs))
+
+	for _, dir := range dirs {
+		fmt.Println(">>> DIR", dir )
 	}
 
 }

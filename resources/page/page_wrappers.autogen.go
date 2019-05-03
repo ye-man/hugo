@@ -16,10 +16,12 @@
 package page
 
 import (
+	"html/template"
+
+	"github.com/gohugoio/hugo/hugofs"
+
 	"github.com/gohugoio/hugo/common/hugo"
 	"github.com/gohugoio/hugo/helpers"
-	"html/template"
-	"os"
 )
 
 // NewDeprecatedWarningPage adds deprecation warnings to the given implementation.
@@ -91,7 +93,7 @@ func (p *pageDeprecated) UniqueID() string {
 	helpers.Deprecated("Page", ".UniqueID", "Use .File.UniqueID", false)
 	return p.p.UniqueID()
 }
-func (p *pageDeprecated) FileInfo() os.FileInfo {
+func (p *pageDeprecated) FileInfo() hugofs.FileMetaInfo {
 	helpers.Deprecated("Page", ".FileInfo", "Use .File.FileInfo", false)
 	return p.p.FileInfo()
 }

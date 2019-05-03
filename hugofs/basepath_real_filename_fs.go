@@ -15,6 +15,8 @@ package hugofs
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/afero"
 )
@@ -27,25 +29,38 @@ type RealFilenameInfo interface {
 	RealFilename() string
 }
 
-type realFilenameInfo struct {
-	os.FileInfo
-	realFilename string
+// TODO(bep) mod consolidate
+type FilePathPather interface {
+	Path() string
 }
 
-func (f *realFilenameInfo) RealFilename() string {
-	return f.realFilename
+type FileNamer interface {
+	Filename() string
+}
+
+type LangProvider interface {
+	Lang() string
+}
+
+// TODO(bep) mod name + consider this vs base fs
+// TODO(bep) mod remove all of these
+type VirtualFileInfo interface {
+	VirtualRoot() string
 }
 
 // NewBasePathRealFilenameFs returns a new BasePathRealFilenameFs instance
 // using base.
 func NewBasePathRealFilenameFs(base *afero.BasePathFs) *BasePathRealFilenameFs {
-	return &BasePathRealFilenameFs{BasePathFs: base}
+	basePath, _ := base.RealPath("")
+	basePath = strings.TrimLeft(basePath, "."+string(os.PathSeparator))
+	return &BasePathRealFilenameFs{BasePathFs: base, basePath: basePath}
 }
 
 // BasePathRealFilenameFs is a thin wrapper around afero.BasePathFs that
 // provides the real filename in Stat and LstatIfPossible.
 type BasePathRealFilenameFs struct {
 	*afero.BasePathFs
+	basePath string
 }
 
 // Stat returns the os.FileInfo structure describing a given file.  If there is
@@ -57,7 +72,7 @@ func (b *BasePathRealFilenameFs) Stat(name string) (os.FileInfo, error) {
 	}
 
 	if _, ok := fi.(RealFilenameInfo); ok {
-		return fi, nil
+		panic("TODO(bep) mod")
 	}
 
 	filename, err := b.RealPath(name)
@@ -65,7 +80,14 @@ func (b *BasePathRealFilenameFs) Stat(name string) (os.FileInfo, error) {
 		return nil, &os.PathError{Op: "stat", Path: name, Err: err}
 	}
 
-	return &realFilenameInfo{FileInfo: fi, realFilename: filename}, nil
+	return decorateFileInfo(b, b.getOpener(name), fi, filename, "", ""), nil
+
+}
+
+func (b *BasePathRealFilenameFs) getOpener(name string) func() (afero.File, error) {
+	return func() (afero.File, error) {
+		return b.Open(name)
+	}
 }
 
 // LstatIfPossible returns the os.FileInfo structure describing a given file.
@@ -78,7 +100,7 @@ func (b *BasePathRealFilenameFs) LstatIfPossible(name string) (os.FileInfo, bool
 		return nil, false, err
 	}
 
-	if _, ok := fi.(RealFilenameInfo); ok {
+	if hasAllFileMetaKeys(fi, metaKeyFilename) {
 		return fi, ok, nil
 	}
 
@@ -87,5 +109,41 @@ func (b *BasePathRealFilenameFs) LstatIfPossible(name string) (os.FileInfo, bool
 		return nil, false, &os.PathError{Op: "lstat", Path: name, Err: err}
 	}
 
-	return &realFilenameInfo{FileInfo: fi, realFilename: filename}, ok, nil
+	return decorateFileInfo(b, b.getOpener(name), fi, filename, "", ""), ok, nil
+}
+
+// Open opens the named file for reading.
+func (fs *BasePathRealFilenameFs) Open(name string) (afero.File, error) {
+	f, err := fs.BasePathFs.Open(name)
+
+	if err != nil {
+		return nil, err
+	}
+	return &realFilenameFile{File: f, fs: fs}, nil
+}
+
+type realFilenameFile struct {
+	afero.File
+	fs *BasePathRealFilenameFs
+}
+
+// Readdir creates FileInfo entries by calling Lstat if possible.
+func (l *realFilenameFile) Readdir(c int) (ofi []os.FileInfo, err error) {
+	names, err := l.File.Readdirnames(c)
+	if err != nil {
+		return nil, err
+	}
+
+	fis := make([]os.FileInfo, len(names))
+
+	for i, name := range names {
+		fi, _, err := l.fs.LstatIfPossible(filepath.Join(l.Name(), name))
+
+		if err != nil {
+			return nil, err
+		}
+		fis[i] = fi
+	}
+
+	return fis, err
 }

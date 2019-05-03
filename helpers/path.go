@@ -172,32 +172,6 @@ func ReplaceExtension(path string, newExt string) string {
 	return f + "." + newExt
 }
 
-// GetFirstThemeDir gets the root directory of the first theme, if there is one.
-// If there is no theme, returns the empty string.
-func (p *PathSpec) GetFirstThemeDir() string {
-	if p.ThemeSet() {
-		return p.AbsPathify(filepath.Join(p.ThemesDir, p.Themes()[0]))
-	}
-	return ""
-}
-
-// GetThemesDir gets the absolute root theme dir path.
-func (p *PathSpec) GetThemesDir() string {
-	if p.ThemeSet() {
-		return p.AbsPathify(p.ThemesDir)
-	}
-	return ""
-}
-
-// GetRelativeThemeDir gets the relative root directory of the current theme, if there is one.
-// If there is no theme, returns the empty string.
-func (p *PathSpec) GetRelativeThemeDir() string {
-	if p.ThemeSet() {
-		return strings.TrimPrefix(filepath.Join(p.ThemesDir, p.Themes()[0]), FilePathSeparator)
-	}
-	return ""
-}
-
 func makePathRelative(inPath string, possibleDirectories ...string) (string, error) {
 
 	for _, currentPath := range possibleDirectories {
