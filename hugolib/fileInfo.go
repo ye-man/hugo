@@ -29,6 +29,7 @@ var (
 )
 
 // A partial interface to prevent ambigous compiler error.
+// TODO(bep) remove me
 type basePather interface {
 	Filename() string
 	RealName() string
@@ -87,17 +88,10 @@ func (fi *fileInfo) isContentFile() bool {
 
 func newFileInfo(sp *source.SourceSpec, baseDir, filename string, fi os.FileInfo, tp bundleDirType) *fileInfo {
 
-	var base basePather
-	// TODO(bep) mod
-	if b, ok := fi.(basePather); ok {
-		base = b
-	}
-
 	baseFi := sp.NewFileInfo(baseDir, filename, tp == bundleLeaf, fi)
 	f := &fileInfo{
-		bundleTp:   tp,
-		File:       baseFi,
-		basePather: base,
+		bundleTp: tp,
+		File:     baseFi,
 	}
 
 	lang := f.Lang()

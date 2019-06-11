@@ -14,7 +14,6 @@
 package source
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -236,15 +235,13 @@ func (sp *SourceSpec) NewFileInfo(baseDir, filename string, isLeafBundle bool, o
 
 	m := fi.Meta()
 
-	fmt.Println(">>>", filename, "vs", m.Filename(), ":::", m, "path:", m.Path())
-
 	filename = m.Filename()
 	// TODO(bep) mod baseDir = fm.BaseDir()
 	relPath = m.Path()
 	lang = m.Lang()
 	translationBaseName = m.GetString("translationBaseName")
 
-	dir, name := filepath.Split(filename)
+	dir, name := filepath.Split(relPath)
 	if !strings.HasSuffix(dir, helpers.FilePathSeparator) {
 		dir = dir + helpers.FilePathSeparator
 	}

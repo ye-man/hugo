@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/pkg/errors"
+
 	"github.com/gohugoio/hugo/modules"
 
 	"github.com/gohugoio/hugo/config"
@@ -380,7 +382,7 @@ func (b *sourceFilesystemsBuilder) createContentFsM() (*SourceFilesystem, error)
 		SourceFs: b.p.Fs.Source,
 	}
 
-	contentFs, absContentDirs, err := b.createContentFs(
+	projectContent, absContentDirs, err := b.createContentFs(
 		s.SourceFs,
 		b.p.WorkingDir,
 		b.p.DefaultContentLanguage,
@@ -401,6 +403,16 @@ func (b *sourceFilesystemsBuilder) createContentFsM() (*SourceFilesystem, error)
 			}
 		}
 	}
+
+	// TODO(bep) mod contentFilesystems probably needs to be reversed
+	contentFs, err := hugofs.NewLanguageFs(b.p.Languages.AsSet(), append(projectContent, b.themeFs.contentFilesystems...)...)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create content filesystem")
+	}
+
+	// TODO(bep) mod check created once
+
+	//printFs(contentFs, "", os.Stdout)
 
 	s.Fs = contentFs
 	s.Dirnames = absContentDirs
@@ -661,7 +673,7 @@ func getStringOrStringSlice(cfg config.Provider, key string, id int) []string {
 func (b *sourceFilesystemsBuilder) createContentFs(fs afero.Fs,
 	workingDir,
 	defaultContentLanguage string,
-	languages langs.Languages) (afero.Fs, []string, error) {
+	languages langs.Languages) ([]hugofs.LangFsProvider, []string, error) {
 
 	var contentLanguages langs.Languages
 	var contentDirSeen = make(map[string]bool)
@@ -690,70 +702,55 @@ func (b *sourceFilesystemsBuilder) createContentFs(fs afero.Fs,
 
 	var absContentDirs []string
 
-	fs, err := b.createContentOverlayFs(fs, workingDir, contentLanguages, languageSet, &absContentDirs)
-	return fs, absContentDirs, err
+	langFsProviders, err := b.createContentFilesystems(fs, workingDir, contentLanguages, languageSet, &absContentDirs)
+	return langFsProviders, absContentDirs, err
 
 }
 
-func (b *sourceFilesystemsBuilder) createContentOverlayFs(source afero.Fs,
+func (b *sourceFilesystemsBuilder) createContentFilesystems(source afero.Fs,
 	workingDir string,
 	languages langs.Languages,
 	languageSet map[string]bool,
-	absContentDirs *[]string) (afero.Fs, error) {
-	if len(languages) == 0 {
-		return source, nil
-	}
+	absContentDirs *[]string) ([]hugofs.LangFsProvider, error) {
 
-	language := languages[0]
+	var langFsProviders []hugofs.LangFsProvider
 
-	contentDir := language.ContentDir
-	if contentDir == "" {
-		panic("missing contentDir")
-	}
+	for _, language := range languages {
 
-	absContentDir := paths.AbsPathify(workingDir, language.ContentDir)
-	if !strings.HasSuffix(absContentDir, paths.FilePathSeparator) {
-		absContentDir += paths.FilePathSeparator
-	}
+		contentDir := language.ContentDir
+		if contentDir == "" {
+			panic("missing contentDir")
+		}
 
-	// If root, remove the second '/'
-	if absContentDir == "//" {
-		absContentDir = paths.FilePathSeparator
-	}
+		absContentDir := paths.AbsPathify(workingDir, language.ContentDir)
+		if !strings.HasSuffix(absContentDir, paths.FilePathSeparator) {
+			absContentDir += paths.FilePathSeparator
+		}
 
-	if len(absContentDir) < 6 {
-		return nil, fmt.Errorf("invalid content dir %q: Path is too short", absContentDir)
-	}
+		// If root, remove the second '/'
+		if absContentDir == "//" {
+			absContentDir = paths.FilePathSeparator
+		}
 
-	*absContentDirs = append(*absContentDirs, absContentDir)
+		if len(absContentDir) < 6 {
+			return nil, fmt.Errorf("invalid content dir %q: Path is too short", absContentDir)
+		}
 
-	//	overlay := hugofs.NewLanguageFs(language.Lang, languageSet, afero.NewBasePathFs(source, absContentDir))
-	if len(languages) == 1 {
-		return hugofs.NewLanguageFs(languageSet,
-			append(
-				[]hugofs.LangFsProvider{
-					hugofs.NewLangFsProvider(language.Lang, newRealBase(afero.NewBasePathFs(source, absContentDir)))},
-				b.themeFs.contentFilesystems...)...)
+		*absContentDirs = append(*absContentDirs, absContentDir)
+
+		bfs := newRealBase(afero.NewBasePathFs(source, absContentDir))
+
+		langFsProviders = append(langFsProviders, hugofs.NewLangFsProvider(language.Lang, bfs))
 
 	}
 
-	base, err := b.createContentOverlayFs(source, workingDir, languages[1:], languageSet, absContentDirs)
-	if err != nil {
-		return nil, err
-	}
-
-	moduleContentFs := newRealBase(afero.NewBasePathFs(b.themeFs.overlay, "content"))
-
-	printFs(moduleContentFs, "", os.Stdout)
-
-	base = afero.NewCopyOnWriteFs(moduleContentFs, base)
-
-	return base, nil // hugofs.NewLanguageCompositeFs(base, overlay), nil
+	return langFsProviders, nil
 
 }
 
 type themeFilesystems struct {
-	overlay            afero.Fs                // Complete view
+	overlay afero.Fs // Complete view
+
 	contentFilesystems []hugofs.LangFsProvider // Partitioned by language
 
 	watchDirs []string // TODO(bep) mod
@@ -775,12 +772,11 @@ func (b *sourceFilesystemsBuilder) createThemesOverlayFs2(p *paths.Paths) (theme
 		modsReversed[i] = mods[len(mods)-1-i]
 	}
 
-	fs, contentfss, err := b.createThemeOverlayFs(p.Fs.Source, modsReversed)
+	fs, contentFss, err := b.createThemeOverlayFs(p.Fs.Source, modsReversed)
 	//fs = hugofs.NewNoLstatFs(fs) // TODO(bep) mod
-
 	return themeFilesystems{
 		overlay:            fs,
-		contentFilesystems: contentfss,
+		contentFilesystems: contentFss,
 	}, err
 
 }
@@ -789,26 +785,26 @@ func (b *sourceFilesystemsBuilder) isContentMount(mnt modules.Mount) bool {
 	return strings.HasPrefix(mnt.Target, "content")
 }
 
-func (b *sourceFilesystemsBuilder) createModFs(source afero.Fs, mod modules.Module) (afero.Fs, []hugofs.LangFsProvider, error) {
+func (b *sourceFilesystemsBuilder) createModFs(source afero.Fs, mod modules.Module) (*hugofs.RootMappingFs, bool, error) {
 
 	var fromTo []hugofs.RootMapping
+	var hasContentMount bool
 
 	for _, mount := range mod.Mounts() {
 		fmt.Println(">>> SOURCE/TARGET", mount.Source, mount.Target)
 		rm := hugofs.RootMapping{
-			From: mount.Source,
-			To:   strings.TrimPrefix(mount.Target, "content/"),
+			From: mount.Target,
+			To:   mount.Source,
 		}
 
 		if b.isContentMount(mount) {
+			hasContentMount = true
 			lang := mount.Lang
 			if lang == "" {
 				lang = b.p.DefaultContentLanguage
 			}
 			rm.Lang = lang
-
 		}
-
 		fromTo = append(fromTo, rm)
 	}
 
@@ -816,21 +812,10 @@ func (b *sourceFilesystemsBuilder) createModFs(source afero.Fs, mod modules.Modu
 
 	rmfs, err := hugofs.NewRootMappingFs(modBase, fromTo...)
 	if err != nil {
-		return nil, nil, err
+		return nil, hasContentMount, err
 	}
 
-	contentDirs, err := rmfs.Dirs("")
-	if err != nil {
-		return nil, nil, err
-	}
-
-	langFss := make([]hugofs.LangFsProvider, len(contentDirs))
-	for i, dir := range contentDirs {
-		langFss[i] = dir
-
-	}
-
-	return rmfs, langFss, nil
+	return rmfs, hasContentMount, nil
 
 }
 
@@ -839,41 +824,44 @@ func printFs(fs afero.Fs, path string, w io.Writer) {
 		return
 	}
 	afero.Walk(fs, path, func(path string, info os.FileInfo, err error) error {
-		fmt.Println(":::", path)
+		fmt.Println("p:::", path)
 		return nil
 	})
 }
+
+const contentBase = "content"
 
 func (b *sourceFilesystemsBuilder) createThemeOverlayFs(source afero.Fs, mods modules.Modules) (afero.Fs, []hugofs.LangFsProvider, error) {
 	if len(mods) == 0 {
 		return hugofs.NoOpFs, nil, nil
 	}
 
-	if len(mods) == 1 {
-		modFs, mfss, err := b.createModFs(source, mods[0])
+	var contentFss []hugofs.LangFsProvider
+
+	base, hasContent, err := b.createModFs(source, mods[0])
+	if err != nil {
+		return nil, nil, err
+	}
+	if hasContent {
+		ldirs, err := base.Dirs(contentBase)
 		if err != nil {
 			return nil, nil, err
 		}
-		return modFs, mfss, nil
+		contentFss = append(contentFss, hugofs.ToLangFsProviders(ldirs)...)
 	}
 
-	var contentFilesystems []hugofs.LangFsProvider
+	if len(mods) == 1 {
+		return base, contentFss, nil
+	}
 
-	base, mfss, err := b.createModFs(source, mods[0])
+	overlay, overlayContentFss, err := b.createThemeOverlayFs(source, mods[1:])
 	if err != nil {
 		return nil, nil, err
 	}
 
-	contentFilesystems = append(contentFilesystems, mfss...)
+	contentFss = append(contentFss, overlayContentFss...)
 
-	overlay, mfss, err := b.createThemeOverlayFs(source, mods[1:])
-	if err != nil {
-		return nil, nil, err
-	}
-
-	contentFilesystems = append(contentFilesystems, mfss...)
-
-	return afero.NewCopyOnWriteFs(base, overlay), contentFilesystems, nil
+	return afero.NewCopyOnWriteFs(base, overlay), contentFss, nil
 }
 
 // TODO(bep) mod remove

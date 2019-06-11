@@ -351,7 +351,6 @@ func (c *capturer) handleDir(dirname hugofs.FileMetaInfo) error {
 	var hasNonContent, isBranch bool
 
 	for i, fi := range files {
-
 		if !fi.IsDir() {
 			fip := fi.(hugofs.FileMetaInfo)
 			tp, isContent := classifyBundledFile(fip.Name())
@@ -565,6 +564,7 @@ func (c *capturer) readDir(dirname hugofs.FileMetaInfo) ([]os.FileInfo, error) {
 
 	dir, err := dirname.Meta().Open()
 	if err != nil {
+		fmt.Printf("META %T %v\n", dirname.Meta().Fs(), dirname.Meta())
 		return nil, errors.Wrapf(err, "failed to open dir %q", dirname.Name())
 	}
 	defer dir.Close()
@@ -576,21 +576,22 @@ func (c *capturer) readDir(dirname hugofs.FileMetaInfo) ([]os.FileInfo, error) {
 	pfis := make([]os.FileInfo, 0, len(fis))
 
 	for _, fi := range fis {
-
-		if !c.sourceSpec.IgnoreFile(fi.Name()) { //fip.Filename()) { // TODO(bep) mod
-
-			// TODO(bep) mod err := c.resolveRealPathIn(fi)
-
-			if err != nil {
-				// It may have been deleted in the meantime.
-				if err == errSkipCyclicDir || os.IsNotExist(err) {
-					continue
-				}
-				return nil, err
-			}
-
-			pfis = append(pfis, fi)
+		if c.sourceSpec.IgnoreFile(fi.Name()) { //fip.Filename()) { // TODO(bep) mod
+			continue
 		}
+
+		// TODO(bep) mod err := c.resolveRealPathIn(fi)
+
+		if err != nil {
+			// It may have been deleted in the meantime.
+			if err == errSkipCyclicDir || os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+
+		pfis = append(pfis, fi)
+
 	}
 
 	return pfis, nil

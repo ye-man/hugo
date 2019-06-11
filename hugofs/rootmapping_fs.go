@@ -44,13 +44,15 @@ type rootMappingFile struct {
 }
 
 type RootMapping struct {
-	From string
-	To   string
+	From     string
+	fromBase string // content, i18n, layouts
+	To       string
 
 	// Metadata
 	Lang string
 }
 
+// TODO(bep) mod
 func (r RootMapping) rootKey() string {
 	if true || r.Lang == "" {
 		return r.From
@@ -62,6 +64,10 @@ func (r RootMapping) rootKey() string {
 
 func (r RootMapping) filename(name string) string {
 	return filepath.Join(r.To, strings.TrimPrefix(name, r.From))
+}
+
+func (r RootMapping) path(name string) string {
+	return strings.TrimPrefix(name, r.fromBase)
 }
 
 func (rm *RootMapping) clean() {
@@ -77,6 +83,7 @@ func NewRootMappingFs(fs afero.Fs, rms ...RootMapping) (*RootMappingFs, error) {
 
 	for _, rm := range rms {
 		(&rm).clean()
+		rm.fromBase = "content/"
 		key := []byte(rm.rootKey())
 		var mappings []RootMapping
 		v, found := rootMapToReal.Get(key)
@@ -114,9 +121,17 @@ func NewRootMappingFsFromFromTo(fs afero.Fs, fromTo ...string) (*RootMappingFs, 
 	return NewRootMappingFs(fs, rms...)
 }
 
-// TODO(bep) mod do a stat to check for each
-func (fs *RootMappingFs) Dirs(name string) ([]FileMeta, error) {
-	roots := fs.getRoots(name)
+func ToLangFsProviders(metas []FileMeta) []LangFsProvider {
+	p := make([]LangFsProvider, len(metas))
+	for i, v := range metas {
+		p[i] = v
+	}
+	return p
+}
+
+func (fs *RootMappingFs) Dirs(base string) ([]FileMeta, error) {
+	roots := fs.getRootsWithPrefix(base)
+
 	if roots == nil {
 		return nil, nil
 	}
@@ -124,7 +139,11 @@ func (fs *RootMappingFs) Dirs(name string) ([]FileMeta, error) {
 	ms := make([]FileMeta, len(roots))
 	for i, r := range roots {
 		ms[i] = FileMeta{
-			metaKeyFilename: r.filename(name),
+			metaKeyOpener: func() (afero.File, error) {
+				return fs.Open(r.From)
+			},
+			metaKeyFs:       fs,
+			metaKeyFilename: r.filename(r.To),
 			metaKeyLang:     r.Lang,
 		}
 	}
@@ -145,6 +164,7 @@ func (fs *RootMappingFs) Stat(name string) (os.FileInfo, error) {
 	}
 
 	filename := root.filename(name)
+	path := root.path(name)
 
 	fi, err := fs.Fs.Stat(filename)
 	if err != nil {
@@ -152,7 +172,7 @@ func (fs *RootMappingFs) Stat(name string) (os.FileInfo, error) {
 	}
 
 	// TODO(bep) mod root
-	return decorateFileInfo(fs.Fs, nil, fi, filename, "", root.Lang), nil
+	return decorateFileInfo(fs.Fs, nil, fi, filename, path, root.Lang), nil
 
 }
 
@@ -235,6 +255,18 @@ func (fs *RootMappingFs) getRoots(name string) []RootMapping {
 	return v.([]RootMapping)
 }
 
+func (fs *RootMappingFs) getRootsWithPrefix(prefix string) []RootMapping {
+	prefixb := []byte(filepath.Clean(prefix))
+	var roots []RootMapping
+
+	fs.rootMapToReal.WalkPrefix(prefixb, func(b []byte, v interface{}) bool {
+		roots = append(roots, v.([]RootMapping)...)
+		return false
+	})
+
+	return roots
+}
+
 func (f *rootMappingFile) Readdir(count int) ([]os.FileInfo, error) {
 	if f.File == nil {
 		dirsn := make([]os.FileInfo, 0)
@@ -258,7 +290,7 @@ func (f *rootMappingFile) Readdir(count int) ([]os.FileInfo, error) {
 	}
 
 	for i, fi := range fis {
-		fis[i] = decorateFileInfo(f.fs.Fs, nil, fi, "", filepath.Join(f.Name(), fi.Name()), f.rm.Lang)
+		fis[i] = decorateFileInfo(f.fs.Fs, nil, fi, "", f.rm.path(filepath.Join(f.Name(), fi.Name())), f.rm.Lang)
 	}
 
 	return fis, nil

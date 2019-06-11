@@ -80,7 +80,9 @@ func (b *BasePathRealFilenameFs) Stat(name string) (os.FileInfo, error) {
 		return nil, &os.PathError{Op: "stat", Path: name, Err: err}
 	}
 
-	return decorateFileInfo(b, b.getOpener(name), fi, filename, "", ""), nil
+	path := strings.TrimPrefix(filename, b.basePath)
+
+	return decorateFileInfo(b, b.getOpener(name), fi, filename, path, ""), nil
 
 }
 
@@ -109,7 +111,8 @@ func (b *BasePathRealFilenameFs) LstatIfPossible(name string) (os.FileInfo, bool
 		return nil, false, &os.PathError{Op: "lstat", Path: name, Err: err}
 	}
 
-	return decorateFileInfo(b, b.getOpener(name), fi, filename, "", ""), ok, nil
+	path := strings.TrimPrefix(filename, b.basePath)
+	return decorateFileInfo(b, b.getOpener(name), fi, filename, path, ""), ok, nil
 }
 
 // Open opens the named file for reading.

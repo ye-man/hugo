@@ -14,6 +14,8 @@
 package hugofs
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,6 +64,16 @@ type _FilePather interface {
 func NewLanguageFs(langs map[string]bool, sources ...LangFsProvider) (*LanguageFs, error) {
 	if len(sources) == 0 {
 		return nil, errors.New("requires at least 1 filesystem")
+	}
+
+	for _, source := range sources {
+		if source.Fs() == nil {
+			return nil, errors.New("missing source Fs")
+		}
+
+		if source.Lang() == "" {
+			return nil, errors.New("missing source lang")
+		}
 	}
 
 	first := sources[0]
@@ -275,8 +287,19 @@ func (fs *LanguageFs) Create(n string) (afero.File, error) {
 	return nil, syscall.EPERM
 }
 
+func printFs(fs afero.Fs, path string, w io.Writer) {
+	if fs == nil {
+		return
+	}
+	afero.Walk(fs, path, func(path string, info os.FileInfo, err error) error {
+		fmt.Println("p:::", path)
+		return nil
+	})
+}
+
 func (fs *LanguageFs) getOpener(name string) func() (afero.File, error) {
 	return func() (afero.File, error) {
+		name = strings.TrimPrefix(name, "/") // TODO(bep) mod
 		return fs.Open(name)
 	}
 }
@@ -431,7 +454,6 @@ func (fs *LanguageFs) readDirs(name string, count int) ([]os.FileInfo, error) {
 
 	current := fs
 	for current != nil {
-
 		fis, err := collect(current)
 		if err != nil {
 			return nil, err
@@ -561,6 +583,8 @@ func decorateFileInfo(
 	filename,
 	path,
 	lang string) os.FileInfo {
+
+	path = strings.TrimPrefix(path, string(os.PathSeparator))
 
 	var m FileMeta
 

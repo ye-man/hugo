@@ -139,47 +139,67 @@ func TestThemeWithContent(t *testing.T) {
 	b := newTestSitesBuilder(t).WithConfigFile("toml", `
 baseURL="https://example.org"
 
-defaultContentLanguage = "nn"
+defaultContentLanguage = "en"
 
 [module]
 [[module.imports]]
 path="a"
 [[module.imports.mounts]]
-source="mycontent"
+source="myacontent"
 target="content/blog"
 lang="en"
+[[module.imports]]
+path="b"
+[[module.imports.mounts]]
+source="mybcontent"
+target="content/blog"
+lang="nn"
 
 [languages]
-[languages.nn]
-languageName = "Nynorsk"
-weight = 1
-title = "Tittel på Nynorsk"
-[languages.nn.params]
-p1 = "p1nn"
 
 [languages.en]
 title = "Title in English"
 languageName = "English"
+weight = 1
+[languages.nn]
+languageName = "Nynorsk"
 weight = 2
-[languages.en.params]
-p1 = "p1en"
+title = "Tittel på nynorsk"
+[languages.nb]
+languageName = "Bokmål"
+weight = 3
+title = "Tittel på bokmål"
+[languages.fr]
+languageName = "French"
+weight = 4
+title = "French Title"
+
+
 `)
 
 	b.WithTemplatesAdded("index.html", `
 {{ range .Site.RegularPages }}
-|{{ .Title }}|{{ .RelPermalink }}
+|{{ .Title }}|{{ .RelPermalink }}|{{ .Plain }}
 {{ end }}
 `)
 
-	b.WithSourceFile("themes/a/mycontent/page.md", `---
-title: Theme Content
+	b.WithSourceFile("themes/a/myacontent/page.md", `---
+title: Theme Content A
 ---
-Some theme content.
+Content A
+
+`)
+
+	b.WithSourceFile("themes/b/mybcontent/page.md", `---
+title: Theme Content B
+---
+Content B
 
 `)
 
 	b.Build(BuildCfg{})
 
-	b.AssertFileContent("public/index.html", " |Theme Content|/blog/page/")
+	b.AssertFileContent("public/index.html", "|Theme Content A|/blog/page/|Content A")
+	b.AssertFileContent("public/nn/index.html", "|Theme Content B|/nn/blog/page/|Content B")
 
 }
